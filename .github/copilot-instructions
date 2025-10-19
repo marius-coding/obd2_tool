@@ -1,0 +1,15 @@
+# Copilot Instructions for obd2_tool
+
+Please follow the project's style guide in `/STYLE_GUIDE.md` when generating code for this repository.
+
+Key requirements:
+- Adhere to PEP 8, except lines may be up to 110 characters.
+- Use strict type hints for all functions and methods.
+- Write descriptive docstrings for all public classes and functions, including:
+  - Brief one-line summary
+  - Detailed description
+  - Parameter and return value documentation
+- Use clear, descriptive names and add comments for complex logic.
+- Prefer list comprehensions, handle exceptions explicitly, and use f-strings.
+
+Refer to `/STYLE_GUIDE.md` for docstring templates and further details.
