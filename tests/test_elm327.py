@@ -201,7 +201,8 @@ class TestMockSerial(unittest.TestCase):
         # Test 220102
         mock.write(b'220102\r')
         response = mock.read(1024).decode('ascii')
-        self.assertIn('7EC10', response)  # First frame marker
+        self.assertIn('7EC', response)  # CAN ID marker
+        self.assertIn('10', response)  # First frame marker
 
 
 if __name__ == '__main__':

@@ -165,7 +165,7 @@ class IsoTpMessage:
             self._next_sequence = (self._next_sequence + 1) % 16
 
             # Check if message is complete
-            if self.expected_length is not None and len(self.payload) >= self.expected_length:
+            if len(self.payload) >= self.expected_length:
                 # Trim to expected length
                 self.payload = self.payload[:self.expected_length]
                 self.is_complete = True

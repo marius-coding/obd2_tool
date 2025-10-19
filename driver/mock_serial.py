@@ -45,9 +45,11 @@ class MockSerial:
             'ATH1': 'OK\r\r>',
             'ATSP0': 'OK\r\r>',
             'ATSH7E4': 'OK\r\r>',
-            '220101': 'SEARCHING...\r',
-            '220102': 'SEARCHING...\r7EC1027620102FFFFFF\r7EC21FFBCBCBCBCBCBC\r7EC22BCBCBCBCBCBCBC\r7EC23BCBCBCBCBCBCBC\r7EC24BCBCBCBCBCBCBC\r7EC25BCBCBCBCBCAAAA\r\r>',
-            '220105': '7EC102E620105FFFB74\r7EC210F012C01012C0B\r7EC220B0C0B0C0C0C3E\r7EC239043820000640E\r7EC240003E82139A000\r7EC2567000000000000\r7EC26000C0C0D0DAAAA\r\r>',
+            # Real trace from Kia Niro EV showing SOC = 52.5%
+            # Using realistic format with spaces between bytes
+            '220101': '7EC 10 3E 62 01 01 EF FB E7 \r7EC 21 ED 69 00 00 00 00 00 \r7EC 22 00 00 0E 26 0D 0C 0D \r7EC 23 0D 0D 00 00 00 34 BC \r7EC 24 18 BC 56 00 00 7C 00 \r7EC 25 02 DE 80 00 02 C9 55 \r7EC 26 00 01 19 AF 00 01 07 \r7EC 27 C3 00 EC 65 6F 00 00 \r7EC 28 03 00 00 00 00 0B B8 \r\r>',
+            '220102': 'SEARCHING...\r7EC 10 27 62 01 02 FF FF FF \r7EC 21 FF BC BC BC BC BC BC BC \r7EC 22 BC BC BC BC BC BC BC BC \r7EC 23 BC BC BC BC BC BC BC BC \r7EC 24 BC BC BC BC BC BC BC BC \r7EC 25 BC BC BC BC BC BC AA AA \r\r>',
+            '220105': '7EC 10 2E 62 01 05 FF FF 0B 74 \r7EC 21 0F 01 2C 01 01 2C 0B \r7EC 22 0B 0C 0B 0C 0C 0C 3E \r7EC 23 90 43 82 00 00 64 0E \r7EC 24 00 03 E8 21 39 A0 00 \r7EC 25 67 00 00 00 00 00 00 \r7EC 26 00 0C 0C 0D 0D AA AA \r\r>',
         }
         self.call_count = {}
 
@@ -68,10 +70,8 @@ class MockSerial:
             self.call_count[command] = 0
         self.call_count[command] += 1
         
-        # Handle special case: 220101 returns STOPPED on second call
-        if command == '220101' and self.call_count[command] == 2:
-            self.response_queue = ['STOPPED\r\r>']
-        elif command in self.responses:
+        # Always return the same response for consistency in demo mode
+        if command in self.responses:
             self.response_queue = [self.responses[command]]
         else:
             self.response_queue = ['?\r\r>']

@@ -4,11 +4,12 @@ ELM327 driver module for OBD-II communication.
 This module provides an interface to communicate with ELM327-based OBD-II adapters.
 """
 
-import serial
-import serial.tools.list_ports
+import serial  # type: ignore[import-untyped]
+import serial.tools.list_ports  # type: ignore[import-untyped]
 import threading
 import time
 from typing import Optional
+from .isotp import IsoTpResponse 
 
 from .exceptions import (
     ConnectionException,
@@ -138,7 +139,7 @@ class ELM327:
         self.serial_connection.write((command + '\r').encode('ascii'))  # type: ignore[attr-defined]
         time.sleep(0.1)
         response = self.serial_connection.read(1024).decode('ascii', errors='ignore')  # type: ignore[attr-defined]
-        return response.strip()
+        return response.strip()  # type: ignore[return-value]
 
     def send_message(self, can_id: int | None, pid: int) -> IsoTpResponse:
         """
@@ -175,9 +176,22 @@ class ELM327:
         # Send message
         response_str = self._send_command(message)
         
-        # Check for errors
-        if 'NO DATA' in response_str or 'ERROR' in response_str or '?' in response_str:
-            raise NoResponseException(f"ECU or ELM327 not responding: {response_str}")
+        # Check for various ELM327 status/error messages that aren't actual data
+        error_keywords = [
+            'NO DATA',      # ECU not responding
+            'ERROR',        # General error
+            '?',            # Unknown command
+            'STOPPED',      # Data stream stopped
+            'UNABLE TO CONNECT',  # Cannot connect to ECU
+            'BUS INIT',     # Bus initialization message
+            'CAN ERROR',    # CAN bus error
+            'BUFFER FULL',  # Internal buffer overflow
+            '<DATA ERROR', # Data transmission error
+        ]
+        
+        for keyword in error_keywords:
+            if keyword in response_str:
+                raise NoResponseException(f"ELM327 error or status message: {response_str}")
         
         # Parse response and handle ISO-TP multi-frame if needed
         raw_payload = self._parse_response(response_str)
@@ -198,44 +212,56 @@ class ELM327:
         Raises:
             InvalidResponseException: If response format is invalid or cannot be parsed.
         """
-        # Remove prompt and whitespace
-        response = response.replace('>', '').replace('\r', '').replace('\n', '').replace(' ', '')
+        # Remove prompt
+        response = response.replace('>', '')
         
-        # Remove SEARCHING... text if present
-        response = response.replace('SEARCHING...', '')
+        # Remove common ELM327 informational messages that may appear in responses
+        informational_messages = [
+            'SEARCHING...',
+            'BUSINIT:',
+            'BUSINIT...',
+            'OK',
+        ]
         
-        # CAN frames in ELM327 responses are formatted as:
-        # 7EC10276... where 7EC is CAN ID, rest is data (typically 16 hex chars = 8 bytes)
-        # Standard CAN frame has 8 bytes of data
+        for msg in informational_messages:
+            response = response.replace(msg, '')
+        
+        # Split by line breaks to process each CAN frame separately
+        # This handles both formats: with spaces (7EC 10 3E...) and without (7EC103E...)
+        lines = response.replace('\r\r', '\r').replace('\n\n', '\n').split('\r')
+        if not lines or len(lines) == 1:
+            lines = response.split('\n')
+        
         frame_data_list: list[str] = []
         can_id_length = 3
-        frame_data_length = 16  # 8 bytes = 16 hex characters
         
-        i = 0
-        while i < len(response):
-            if i + can_id_length <= len(response):
-                # Try to extract CAN ID
-                potential_id = response[i:i+can_id_length]
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            
+            # Remove spaces from this line to normalize format
+            line_no_spaces = line.replace(' ', '')
+            
+            # Check if line starts with a valid CAN ID (3 hex chars)
+            if len(line_no_spaces) >= can_id_length:
                 try:
-                    int(potential_id, 16)
-                    # Valid CAN ID found, extract data
-                    data_start = i + can_id_length
-                    data_end = min(data_start + frame_data_length, len(response))
-                    frame_data = response[data_start:data_end]
+                    potential_id = line_no_spaces[:can_id_length]
+                    int(potential_id, 16)  # Validate it's hex
                     
-                    if frame_data:
+                    # Extract data after CAN ID (typically 8 bytes = 16 hex chars)
+                    frame_data = line_no_spaces[can_id_length:]
+                    if frame_data and len(frame_data) >= 2:  # At least 1 byte of data
                         frame_data_list.append(frame_data)
-                    
-                    i = data_end
                 except ValueError:
-                    i += 1
-            else:
-                break
+                    # Not a valid CAN frame, skip this line
+                    continue
         
-        # If no frames found, try to parse as single hex string
+        # If no frames found, try to parse entire response as single hex string
         if not frame_data_list:
+            response_clean = response.replace('\r', '').replace('\n', '').replace(' ', '')
             try:
-                data = bytearray.fromhex(response)
+                data = bytearray.fromhex(response_clean)
                 return data
             except ValueError:
                 raise InvalidResponseException(f"Invalid response format: {response}")
@@ -246,6 +272,7 @@ class ELM327:
             return payload
         except ValueError as e:
             raise InvalidResponseException(f"ISO-TP parsing error: {e}")
+
 
     def enable_cyclic_tester_present(self, cycle_time: float = 2.0) -> None:
         """
