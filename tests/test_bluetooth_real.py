@@ -49,15 +49,16 @@ class TestBluetoothRealConnection(unittest.TestCase):
         """Clean up after tests."""
         if self.elm:
             try:
-                asyncio.run(self.elm.close())
+                self.elm.close()
             except Exception:
                 pass
         
         if self.connection:
             try:
-                asyncio.run(self.connection.close())
+                self.connection.close()
                 # Add delay after disconnecting to allow RFCOMM to fully release
-                asyncio.run(asyncio.sleep(2.0))
+                import time
+                time.sleep(2.0)
             except Exception:
                 pass
     
@@ -76,30 +77,30 @@ class TestBluetoothRealConnection(unittest.TestCase):
             # Create Bluetooth connection
             self.connection = BluetoothConnection(
                 address=BLUETOOTH_ADDRESS,
-                rfcomm_device=RFCOMM_DEVICE,
-                channel=RFCOMM_CHANNEL,
-                baudrate=BAUDRATE
+                channel=RFCOMM_CHANNEL
             )
             
             try:
                 # Try to open connection
-                await self.connection.open()
+                self.connection.open()
                 # Add delay after connecting to allow RFCOMM to stabilize
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(0.2)
                 self.assertTrue(self.connection.is_open, "Connection should be open")
                 
                 # Create ELM327 instance
                 self.elm = ELM327(self.connection)
                 
                 # Initialize ELM327 - this sends ATZ, ATE0, ATL0, ATS0, ATH1, ATSP0
-                await self.elm.initialize()
+                self.elm.initialize()
                 self.assertTrue(self.elm._initialized, "ELM327 should be initialized")
                 
                 print("\n✓ Successfully connected to Bluetooth adapter")
                 print("✓ ELM327 initialization completed")
                 
             except Exception as e:
+                print(f"Bluetooth connection failed: {e}")
                 # If connection fails, skip the test
+                print(f"Bluetooth connection failed: {e}")
                 self.skipTest(f"Bluetooth adapter not available: {e}")
         
         # Run the async test
@@ -119,20 +120,18 @@ class TestBluetoothRealConnection(unittest.TestCase):
             # Create and open connection
             self.connection = BluetoothConnection(
                 address=BLUETOOTH_ADDRESS,
-                rfcomm_device=RFCOMM_DEVICE,
-                channel=RFCOMM_CHANNEL,
-                baudrate=BAUDRATE
+                channel=RFCOMM_CHANNEL
             )
             
             try:
-                await self.connection.open()
+                self.connection.open()
                 # Add delay after connecting to allow RFCOMM to stabilize
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(0.2)
                 self.elm = ELM327(self.connection)
-                await self.elm.initialize()
+                self.elm.initialize()
                 
                 # Send ATI command to get device information
-                response = await self.elm._send_command('ATI')
+                response = self.elm._send_command('ATI')
                 
                 # Verify we got a response
                 self.assertIsNotNone(response, "Should receive response from ATI")
@@ -145,6 +144,7 @@ class TestBluetoothRealConnection(unittest.TestCase):
                 print(f"\n✓ ELM327 Version: {response}")
                 
             except Exception as e:
+                print(f"Bluetooth connection failed: {e}")
                 self.skipTest(f"Bluetooth adapter not available: {e}")
         
         asyncio.run(run_test())
@@ -163,20 +163,18 @@ class TestBluetoothRealConnection(unittest.TestCase):
             # Create and open connection
             self.connection = BluetoothConnection(
                 address=BLUETOOTH_ADDRESS,
-                rfcomm_device=RFCOMM_DEVICE,
-                channel=RFCOMM_CHANNEL,
-                baudrate=BAUDRATE
+                channel=RFCOMM_CHANNEL
             )
             
             try:
-                await self.connection.open()
+                self.connection.open()
                 # Add delay after connecting to allow RFCOMM to stabilize
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(0.2)
                 self.elm = ELM327(self.connection)
-                await self.elm.initialize()
+                self.elm.initialize()
                 
                 # Send ATRV command to read voltage
-                response = await self.elm._send_command('ATRV')
+                response = self.elm._send_command('ATRV')
                 
                 # Verify we got a response
                 self.assertIsNotNone(response, "Should receive response from ATRV")
@@ -188,6 +186,7 @@ class TestBluetoothRealConnection(unittest.TestCase):
                 print(f"\n✓ Adapter Voltage: {response}")
                 
             except Exception as e:
+                print(f"Bluetooth connection failed: {e}")
                 self.skipTest(f"Bluetooth adapter not available: {e}")
         
         asyncio.run(run_test())
@@ -206,21 +205,19 @@ class TestBluetoothRealConnection(unittest.TestCase):
             # Create and open connection
             self.connection = BluetoothConnection(
                 address=BLUETOOTH_ADDRESS,
-                rfcomm_device=RFCOMM_DEVICE,
-                channel=RFCOMM_CHANNEL,
-                baudrate=BAUDRATE
+                channel=RFCOMM_CHANNEL
             )
             
             try:
-                await self.connection.open()
+                self.connection.open()
                 # Add delay after connecting to allow RFCOMM to stabilize
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(0.2)
                 self.elm = ELM327(self.connection)
-                await self.elm.initialize()
+                self.elm.initialize()
                 
                 # Try to read vehicle speed (should fail without vehicle)
                 with self.assertRaises(NoResponseException) as context:
-                    await self.elm.send_message(None, 0x0D)
+                    self.elm.send_message(None, 0x0D)
                 
                 # The exception should mention NO DATA or similar
                 error_msg = str(context.exception).upper()
@@ -233,6 +230,7 @@ class TestBluetoothRealConnection(unittest.TestCase):
                 print(f"  Error message: {context.exception}")
                 
             except Exception as e:
+                print(f"Bluetooth connection failed: {e}")
                 self.skipTest(f"Bluetooth adapter not available: {e}")
         
         asyncio.run(run_test())
@@ -251,9 +249,7 @@ class TestBluetoothRealConnection(unittest.TestCase):
             # Create connection
             self.connection = BluetoothConnection(
                 address=BLUETOOTH_ADDRESS,
-                rfcomm_device=RFCOMM_DEVICE,
-                channel=RFCOMM_CHANNEL,
-                baudrate=BAUDRATE
+                channel=RFCOMM_CHANNEL
             )
             
             try:
@@ -261,9 +257,9 @@ class TestBluetoothRealConnection(unittest.TestCase):
                 self.assertFalse(self.connection.is_open, "Connection should not be open initially")
                 
                 # Open connection
-                await self.connection.open()
+                self.connection.open()
                 # Add delay after connecting to allow RFCOMM to stabilize
-                await asyncio.sleep(2.0)
+                await asyncio.sleep(0.2)
                 self.assertTrue(self.connection.is_open, "Connection should be open after open()")
                 
                 # Verify it needs delays (real hardware)
@@ -273,8 +269,8 @@ class TestBluetoothRealConnection(unittest.TestCase):
                 )
                 
                 # Test basic write/read
-                await self.connection.write(b'ATZ\r')
-                response = await self.connection.read(100)
+                self.connection.write(b'ATZ\r')
+                response = self.connection.read(100)
                 self.assertGreater(len(response), 0, "Should receive response from ATZ")
                 
                 print("\n✓ Connection properties verified")
@@ -282,10 +278,11 @@ class TestBluetoothRealConnection(unittest.TestCase):
                 print(f"  - Needs delays: {self.connection.needs_delays}")
                 
                 # Close connection
-                await self.connection.close()
+                self.connection.close()
                 self.assertFalse(self.connection.is_open, "Connection should be closed after close()")
                 
             except Exception as e:
+                print(f"Bluetooth connection failed: {e}")
                 self.skipTest(f"Bluetooth adapter not available: {e}")
         
         asyncio.run(run_test())
