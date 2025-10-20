@@ -5,39 +5,35 @@ This module provides a mock serial connection that simulates ELM327 responses
 based on recorded communication traces.
 """
 
+from typing import Optional
 
-class MockSerial:
+from .connection import Connection
+
+
+class MockConnection(Connection):
     """
-    Mock serial connection for testing ELM327 communication.
+    Mock connection for testing ELM327 communication.
 
     Simulates ELM327 device responses based on predefined command-response pairs.
 
     Attributes:
-        port (str): The port name (not used in mock).
-        baudrate (int): The baudrate (not used in mock).
-        timeout (float): The timeout value (not used in mock).
         responses (dict): Dictionary mapping commands to responses.
         response_queue (list): Queue of responses for multi-line responses.
+        call_count (dict): Counter for command calls.
     """
 
-    def __init__(self, port: str, baudrate: int, timeout: float) -> None:
+    def __init__(self) -> None:
         """
-        Initialize mock serial connection.
-
-        Args:
-            port (str): The port name (not used in mock).
-            baudrate (int): The baudrate (not used in mock).
-            timeout (float): The timeout value (not used in mock).
+        Initialize mock connection.
         """
-        self.port = port
-        self.baudrate = baudrate
-        self.timeout = timeout
-        self.is_open = True
+        super().__init__()
+        self._needs_delays = False  # Mock connections don't need delays
         self.response_queue: list[str] = []
         self.call_count: dict[str, int] = {}
+        self._read_buffer: bytes = b''
         
         # Predefined responses based on recorded trace
-        self.responses = {
+        self.responses: dict[str, str] = {
             'ATZ': '\r\rELM327 v1.5\r\r>',
             'ATE0': 'ATE0\rOK\r\r>',
             'ATL0': 'OK\r\r>',
@@ -51,17 +47,27 @@ class MockSerial:
             '220102': 'SEARCHING...\r7EC 10 27 62 01 02 FF FF FF \r7EC 21 FF BC BC BC BC BC BC BC \r7EC 22 BC BC BC BC BC BC BC BC \r7EC 23 BC BC BC BC BC BC BC BC \r7EC 24 BC BC BC BC BC BC BC BC \r7EC 25 BC BC BC BC BC BC AA AA \r\r>',
             '220105': '7EC 10 2E 62 01 05 FF FF 0B 74 \r7EC 21 0F 01 2C 01 01 2C 0B \r7EC 22 0B 0C 0B 0C 0C 0C 3E \r7EC 23 90 43 82 00 00 64 0E \r7EC 24 00 03 E8 21 39 A0 00 \r7EC 25 67 00 00 00 00 00 00 \r7EC 26 00 0C 0C 0D 0D AA AA \r\r>',
         }
-        self.call_count = {}
 
-    def write(self, data: bytes) -> int:
+    async def open(self) -> None:
+        """
+        Open the mock connection.
+        """
+        self._is_open = True
+
+    async def close(self) -> None:
+        """
+        Close the mock connection.
+        """
+        self._is_open = False
+        self.response_queue.clear()
+        self._read_buffer = b''
+
+    async def write(self, data: bytes) -> None:
         """
         Mock write operation.
 
         Args:
             data (bytes): Data to write.
-
-        Returns:
-            int: Number of bytes written.
         """
         command = data.decode('ascii').strip()
         
@@ -70,15 +76,16 @@ class MockSerial:
             self.call_count[command] = 0
         self.call_count[command] += 1
         
-        # Always return the same response for consistency in demo mode
+        # Queue the appropriate response
         if command in self.responses:
-            self.response_queue = [self.responses[command]]
+            response = self.responses[command]
         else:
-            self.response_queue = ['?\r\r>']
+            response = '?\r\r>'
         
-        return len(data)
+        # Add response to read buffer
+        self._read_buffer += response.encode('ascii')
 
-    def read(self, size: int) -> bytes:
+    async def read(self, size: int = 1) -> bytes:
         """
         Mock read operation.
 
@@ -88,13 +95,48 @@ class MockSerial:
         Returns:
             bytes: Response data.
         """
-        if self.response_queue:
-            response = self.response_queue.pop(0)
-            return response.encode('ascii')
-        return b''
+        # Read from buffer
+        if len(self._read_buffer) <= size:
+            result = self._read_buffer
+            self._read_buffer = b''
+        else:
+            result = self._read_buffer[:size]
+            self._read_buffer = self._read_buffer[size:]
+        
+        return result
 
-    def close(self) -> None:
+    async def read_until(self, terminator: bytes, timeout: Optional[float] = None) -> bytes:
         """
-        Mock close operation.
+        Read data until a terminator is found.
+
+        Args:
+            terminator: Byte sequence to read until
+            timeout: Optional timeout in seconds (not used in mock)
+
+        Returns:
+            Bytes read including terminator
         """
-        self.is_open = False
+        # Find terminator in buffer
+        idx = self._read_buffer.find(terminator)
+        if idx != -1:
+            # Include terminator
+            result = self._read_buffer[:idx + len(terminator)]
+            self._read_buffer = self._read_buffer[idx + len(terminator):]
+            return result
+        
+        # Return everything if no terminator found
+        result = self._read_buffer
+        self._read_buffer = b''
+        return result
+
+    async def flush_input(self) -> None:
+        """
+        Flush input buffer.
+        """
+        self._read_buffer = b''
+
+    async def flush_output(self) -> None:
+        """
+        Flush output buffer (no-op for mock).
+        """
+        pass

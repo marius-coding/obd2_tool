@@ -4,9 +4,10 @@ Unit tests for ELM327 driver.
 Tests are based on recorded communication trace with an actual ELM327 device.
 """
 
+import asyncio
 import unittest
 from driver.elm327 import ELM327
-from driver.mock_serial import MockSerial
+from driver.mock_serial import MockConnection
 from driver.exceptions import NoResponseException, InvalidResponseException
 from driver.isotp import IsoTpResponse
 
@@ -15,18 +16,19 @@ class TestELM327(unittest.TestCase):
     """
     Test suite for ELM327 driver.
 
-    Uses mock serial interface with responses from recorded trace.
+    Uses mock connection interface with responses from recorded trace.
     """
 
     def setUp(self) -> None:
         """
         Set up test fixtures.
 
-        Creates a mock serial connection and initializes ELM327 driver.
+        Creates a mock connection and initializes ELM327 driver.
         """
-        self.mock_serial = MockSerial(port='/dev/ttyUSB0', baudrate=38400, timeout=1.0)
-        self.elm = ELM327(port='/dev/ttyUSB0', baudrate=38400, timeout=1.0,
-                          serial_connection=self.mock_serial)
+        self.mock_connection = MockConnection()
+        asyncio.run(self.mock_connection.open())
+        self.elm = ELM327(self.mock_connection)
+        asyncio.run(self.elm.initialize())
 
     def tearDown(self) -> None:
         """
@@ -34,7 +36,7 @@ class TestELM327(unittest.TestCase):
 
         Closes the ELM327 connection.
         """
-        self.elm.close()
+        asyncio.run(self.elm.close())
 
     def test_initialization(self) -> None:
         """
@@ -42,8 +44,9 @@ class TestELM327(unittest.TestCase):
 
         Verifies that the driver properly initializes with ATZ, ATE0, ATL0, ATS0, ATH1, ATSP0.
         """
-        self.assertIsNotNone(self.elm.serial_connection)
-        self.assertTrue(self.mock_serial.is_open)
+        self.assertIsNotNone(self.elm.connection)
+        self.assertTrue(self.mock_connection.is_open)
+        self.assertTrue(self.elm._initialized)
 
     def test_send_uds_message_no_response(self) -> None:
         """
@@ -53,7 +56,7 @@ class TestELM327(unittest.TestCase):
         """
         with self.assertRaises(NoResponseException):
             # This should fail because mock returns only "SEARCHING..." followed by "STOPPED"
-            self.elm.send_message(can_id=0x7E4, pid=0x22)
+            asyncio.run(self.elm.send_message(can_id=0x7E4, pid=0x22))
 
     def test_send_uds_message_with_isotp_response(self) -> None:
         """
@@ -63,7 +66,7 @@ class TestELM327(unittest.TestCase):
         Expected: 7EC1027620102FFFFFF... (first frame with length 0x27)
         """
         # Send UDS request 0x22 0x01 0x02
-        response = self.elm.send_message(can_id=0x7E4, pid=0x220102)
+        response = asyncio.run(self.elm.send_message(can_id=0x7E4, pid=0x220102))
         
         # Verify we got a structured response
         self.assertIsInstance(response, IsoTpResponse)
@@ -82,7 +85,7 @@ class TestELM327(unittest.TestCase):
         as padding, but this is trimmed off to match the declared message length.
         """
         # Send UDS request 0x22 0x01 0x02
-        response = self.elm.send_message(can_id=0x7E4, pid=0x220102)
+        response = asyncio.run(self.elm.send_message(can_id=0x7E4, pid=0x220102))
         
         # Expected data payload (39 bytes total - 3 bytes for service ID and data identifier)
         expected_payload = bytearray.fromhex(
@@ -103,7 +106,7 @@ class TestELM327(unittest.TestCase):
         Based on trace: ATSH7E4 + 220105 -> Multi-frame ISO-TP response
         """
         # Send UDS request 0x22 0x01 0x05
-        response = self.elm.send_message(can_id=0x7E4, pid=0x220105)
+        response = asyncio.run(self.elm.send_message(can_id=0x7E4, pid=0x220105))
         
         # Verify we got a structured response
         self.assertIsInstance(response, IsoTpResponse)
@@ -119,7 +122,7 @@ class TestELM327(unittest.TestCase):
         # The trace shows frames: 7EC10, 7EC21, 7EC22, 7EC23, 7EC24, 7EC25
         # Format: 7EC = response ID, 10 = first frame, 2X = consecutive frames
         
-        response = self.elm.send_message(can_id=0x7E4, pid=0x220102)
+        response = asyncio.run(self.elm.send_message(can_id=0x7E4, pid=0x220102))
         
         # Verify response is structured and not empty
         self.assertIsInstance(response, IsoTpResponse)
@@ -132,12 +135,12 @@ class TestELM327(unittest.TestCase):
         Verifies that driver properly raises InvalidResponseException for malformed data.
         """
         # Add a command that returns invalid hex data to the mock
-        self.mock_serial.responses['999999'] = 'INVALID_HEX\r\r>'
+        self.mock_connection.responses['999999'] = 'INVALID_HEX\r\r>'
         
         with self.assertRaises(InvalidResponseException):
             # Try to send a message that will get invalid response
             # The mock will return the invalid response
-            self.elm.send_message(can_id=0x999, pid=0x999999)
+            asyncio.run(self.elm.send_message(can_id=0x999, pid=0x999999))
 
     def test_tester_present_enable_disable(self) -> None:
         """
@@ -155,35 +158,38 @@ class TestELM327(unittest.TestCase):
         self.assertFalse(self.elm.tester_present_running)
 
 
-class TestMockSerial(unittest.TestCase):
+class TestMockConnection(unittest.TestCase):
     """
-    Test suite for MockSerial interface.
+    Test suite for MockConnection interface.
 
     Verifies that the mock properly simulates ELM327 behavior.
     """
 
     def test_mock_initialization_sequence(self) -> None:
         """
-        Test mock serial initialization commands.
+        Test mock connection initialization commands.
 
         Verifies that mock returns correct responses for initialization sequence.
         """
-        mock = MockSerial(port='/dev/ttyUSB0', baudrate=38400, timeout=1.0)
+        mock = MockConnection()
+        asyncio.run(mock.open())
         
         # Test ATZ
-        mock.write(b'ATZ\r')
-        response = mock.read(1024).decode('ascii')
+        asyncio.run(mock.write(b'ATZ\r'))
+        response = asyncio.run(mock.read(1024)).decode('ascii')
         self.assertIn('ELM327', response)
         
         # Test ATE0
-        mock.write(b'ATE0\r')
-        response = mock.read(1024).decode('ascii')
+        asyncio.run(mock.write(b'ATE0\r'))
+        response = asyncio.run(mock.read(1024)).decode('ascii')
         self.assertIn('OK', response)
         
         # Test ATL0
-        mock.write(b'ATL0\r')
-        response = mock.read(1024).decode('ascii')
+        asyncio.run(mock.write(b'ATL0\r'))
+        response = asyncio.run(mock.read(1024)).decode('ascii')
         self.assertIn('OK', response)
+        
+        asyncio.run(mock.close())
 
     def test_mock_uds_responses(self) -> None:
         """
@@ -191,18 +197,21 @@ class TestMockSerial(unittest.TestCase):
 
         Verifies that mock returns correct responses for UDS commands from trace.
         """
-        mock = MockSerial(port='/dev/ttyUSB0', baudrate=38400, timeout=1.0)
+        mock = MockConnection()
+        asyncio.run(mock.open())
         
         # Test ATSH7E4
-        mock.write(b'ATSH7E4\r')
-        response = mock.read(1024).decode('ascii')
+        asyncio.run(mock.write(b'ATSH7E4\r'))
+        response = asyncio.run(mock.read(1024)).decode('ascii')
         self.assertIn('OK', response)
         
         # Test 220102
-        mock.write(b'220102\r')
-        response = mock.read(1024).decode('ascii')
+        asyncio.run(mock.write(b'220102\r'))
+        response = asyncio.run(mock.read(2048)).decode('ascii')
         self.assertIn('7EC', response)  # CAN ID marker
         self.assertIn('10', response)  # First frame marker
+        
+        asyncio.run(mock.close())
 
 
 if __name__ == '__main__':

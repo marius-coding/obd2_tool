@@ -4,123 +4,89 @@ ELM327 driver module for OBD-II communication.
 This module provides an interface to communicate with ELM327-based OBD-II adapters.
 """
 
-import serial  # type: ignore[import-untyped]
-import serial.tools.list_ports  # type: ignore[import-untyped]
+import asyncio
 import threading
 import time
 from typing import Optional
-from .isotp import IsoTpResponse 
 
 from .exceptions import (
-    ConnectionException,
+    ConnectionException as ELM327ConnectionException,
     DeviceNotFoundException,
     InvalidResponseException,
     NoResponseException,
     NotConnectedException,
 )
 from .isotp import parse_isotp_frames, parse_uds_response, IsoTpResponse
+from .connection import Connection, ConnectionException
 
 
 class ELM327:
     """
     Driver for ELM327-based OBD-II adapters.
 
-    This class handles serial communication with ELM327 devices, supporting both
-    standard OBD-II requests and UDS (Unified Diagnostic Services) messages over
-    ISO-TP protocol.
+    This class handles communication with ELM327 devices through an abstract connection
+    interface, supporting both standard OBD-II requests and UDS (Unified Diagnostic Services)
+    messages over ISO-TP protocol.
 
     Attributes:
-        port (str | None): Serial port name or None for automatic detection.
-        baudrate (int): Communication baudrate (default: 38400).
-        timeout (float): Serial read timeout in seconds.
-        serial_connection (Any): Active serial connection.
+        connection (Connection): Connection layer for communication (serial, Bluetooth, etc.).
         tester_present_thread (threading.Thread | None): Thread for cyclic tester present.
         tester_present_running (bool): Flag indicating if tester present is active.
     """
 
-    def __init__(self, port: str | None = None, baudrate: int = 38400, timeout: float = 1.0,
-                 serial_connection: Optional[object] = None) -> None:
+    def __init__(self, connection: Connection) -> None:
         """
-        Initialize the ELM327 driver.
+        Initialize the ELM327 driver with a connection layer.
 
-        If port is None, the driver will attempt to automatically detect and connect
-        to an ELM327 device on available serial ports.
+        The connection should be opened before passing it to ELM327, or you can use
+        the async context manager pattern to ensure proper initialization.
 
         Args:
-            port (str | None): Serial port name (e.g., '/dev/ttyUSB0', 'COM3') or None for auto-detection.
-            baudrate (int): Communication baudrate (default: 38400).
-            timeout (float): Serial read timeout in seconds (default: 1.0).
-            serial_connection (object | None): Optional mock serial connection for testing.
+            connection (Connection): An instance of a Connection implementation (SerialConnection,
+                                     BluetoothConnection, etc.). The connection will be used for
+                                     all communication with the ELM327 device.
+
+        Example:
+            >>> from driver.serial_connection import SerialConnection
+            >>> async with SerialConnection('/dev/ttyUSB0') as conn:
+            ...     elm = ELM327(conn)
+            ...     await elm.initialize()
+            ...     response = await elm.send_message(None, 0x0D)
         """
-        self.port = port
-        self.baudrate = baudrate
-        self.timeout = timeout
-        self.serial_connection: Optional[object] = serial_connection
+        self.connection = connection
         self.tester_present_thread: Optional[threading.Thread] = None
         self.tester_present_running: bool = False
         self._tester_present_interval: float = 2.0
+        self._initialized: bool = False
 
-        if self.serial_connection is None:
-            if self.port is None:
-                self.port = self._auto_detect_port()
-            
-            self._connect()
-
-    def _auto_detect_port(self) -> str:
+    async def initialize(self) -> None:
         """
-        Automatically detect ELM327 device on available serial ports.
+        Initialize the ELM327 device with optimal settings.
 
-        Searches through available serial ports and attempts to identify an ELM327 device
-        by sending the ATZ (reset) command and checking for a valid response.
-
-        Returns:
-            str: The detected port name.
+        Configures the ELM327 adapter for OBD-II/UDS communication. This should be called
+        once after the transport is opened.
 
         Raises:
-            DeviceNotFoundException: If no ELM327 device is found on any available port.
-        """
-        ports = serial.tools.list_ports.comports()
-        
-        for port_info in ports:
-            try:
-                test_serial = serial.Serial(port_info.device, self.baudrate, timeout=self.timeout)
-                test_serial.write(b'ATZ\r')
-                time.sleep(1)
-                response = test_serial.read(100).decode('ascii', errors='ignore')
-                test_serial.close()
-                
-                if 'ELM327' in response or 'ELM' in response:
-                    return port_info.device
-            except (serial.SerialException, OSError):
-                continue
-        
-        raise DeviceNotFoundException("No ELM327 device found on available ports")
-
-    def _connect(self) -> None:
-        """
-        Establish serial connection and initialize ELM327 device.
-
-        Configures the ELM327 adapter with optimal settings for OBD-II/UDS communication.
-
-        Raises:
-            ConnectionException: If connection or initialization fails.
+            ConnectionException: If initialization fails.
         """
         try:
-            self.serial_connection = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
-            time.sleep(0.1)
+            # Reset and wait for initialization
+            await self._send_command('ATZ')
+            if self.connection.needs_delays:
+                await asyncio.sleep(1.0)
             
-            # Initialize ELM327
-            self._send_command('ATZ')  # Reset
-            time.sleep(1)
-            self._send_command('ATE0')  # Echo off
-            self._send_command('ATL0')  # Linefeeds off
-            self._send_command('ATS0')  # Spaces off
-            self._send_command('ATH1')  # Headers on
-            self._send_command('ATSP0')  # Auto protocol detection
-        except serial.SerialException as e:
-            raise ConnectionException(f"Failed to connect to ELM327 on {self.port}: {e}")
+            # Configure ELM327
+            await self._send_command('ATE0')  # Echo off
+            await self._send_command('ATL0')  # Linefeeds off
+            await self._send_command('ATS0')  # Spaces off
+            await self._send_command('ATH1')  # Headers on
+            await self._send_command('ATSP0')  # Auto protocol detection
+            
+            self._initialized = True
+        except ConnectionException as e:
+            raise ELM327ConnectionException(f"Failed to initialize ELM327: {e}")
 
-    def _send_command(self, command: str) -> str:
+    async def _send_command(self, command: str) -> str:
         """
         Send a command to the ELM327 device and read response.
 
@@ -131,17 +97,24 @@ class ELM327:
             str: Response from the ELM327 device.
 
         Raises:
-            NotConnectedException: If no serial connection is established.
+            NotConnectedException: If connection is not established.
+            ConnectionException: If communication fails.
         """
-        if self.serial_connection is None:
-            raise NotConnectedException("No active serial connection")
-        
-        self.serial_connection.write((command + '\r').encode('ascii'))  # type: ignore[attr-defined]
-        time.sleep(0.1)
-        response = self.serial_connection.read(1024).decode('ascii', errors='ignore')  # type: ignore[attr-defined]
-        return response.strip()  # type: ignore[return-value]
+        try:
+            # Send command with carriage return
+            await self.connection.write((command + '\r').encode('ascii'))
+            
+            # Brief pause for ELM327 to process (skip for mock/fast connections)
+            if self.connection.needs_delays:
+                await asyncio.sleep(0.1)
+            
+            # Read response
+            response = await self.connection.read(1024)
+            return response.decode('ascii', errors='ignore').strip()
+        except ConnectionException as e:
+            raise NotConnectedException(f"Connection communication failed: {e}")
 
-    def send_message(self, can_id: int | None, pid: int) -> IsoTpResponse:
+    async def send_message(self, can_id: int | None, pid: int) -> IsoTpResponse:
         """
         Send an OBD-II or UDS message and receive the response.
 
@@ -157,24 +130,24 @@ class ELM327:
             IsoTpResponse: Parsed response with service ID, data identifier, and payload.
 
         Raises:
-            NotConnectedException: If no serial connection is established.
+            NotConnectedException: If connection is not established or not initialized.
             NoResponseException: If ECU or ELM327 does not respond or returns an error.
         """
-        if self.serial_connection is None:
-            raise NotConnectedException("No active serial connection")
+        if not self._initialized:
+            raise NotConnectedException("ELM327 not initialized. Call initialize() first.")
 
         # Construct message
         if can_id is not None:
             # UDS message with specific CAN ID
             header = f"ATSH{can_id:03X}"
-            self._send_command(header)
+            await self._send_command(header)
             message = f"{pid:02X}"
         else:
             # Standard OBD-II request (Mode 01)
             message = f"01{pid:02X}"
 
         # Send message
-        response_str = self._send_command(message)
+        response_str = await self._send_command(message)
         
         # Check for various ELM327 status/error messages that aren't actual data
         error_keywords = [
@@ -297,11 +270,12 @@ class ELM327:
         Background loop for sending cyclic Tester Present messages.
 
         This method runs in a separate thread and should not be called directly.
+        Uses asyncio.run to execute async commands in the thread context.
         """
         while self.tester_present_running:
             try:
                 # Send Tester Present (0x3E 0x00) - suppress positive response
-                self._send_command('3E00')
+                asyncio.run(self._send_command('3E00'))
             except Exception:
                 pass  # Ignore errors in background thread
             time.sleep(self._tester_present_interval)
@@ -317,13 +291,12 @@ class ELM327:
             self.tester_present_thread.join(timeout=self._tester_present_interval + 1.0)
             self.tester_present_thread = None
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """
-        Close the serial connection and stop all background tasks.
+        Close the connection and stop all background tasks.
 
         Should be called when the driver is no longer needed to free resources.
         """
         self.disable_tester_present()
-        if self.serial_connection is not None:
-            self.serial_connection.close()  # type: ignore[attr-defined]
-            self.serial_connection = None
+        await self.connection.close()
+        self._initialized = False

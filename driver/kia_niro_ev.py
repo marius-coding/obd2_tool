@@ -47,7 +47,7 @@ class KiaNiroEV:
         self.elm = elm
         self.bms_can_id = self.BMS_REQUEST_ID
     
-    def _read_bms_data(self, pid: int) -> bytearray:
+    async def _read_bms_data(self, pid: int) -> bytearray:
         """
         Read data from BMS module.
         
@@ -59,24 +59,24 @@ class KiaNiroEV:
         """
         # Construct UDS command: 22 (ReadDataByIdentifier) + PID (2 bytes)
         uds_command = (self.READ_DATA_BY_ID << 16) | pid
-        response = self.elm.send_message(self.bms_can_id, uds_command)
+        response = await self.elm.send_message(self.bms_can_id, uds_command)
         return response.payload
     
-    def get_soc(self) -> float:
+    async def get_soc(self) -> float:
         """
         Get State of Charge from BMS.
         
         Returns:
             float: State of Charge in percent (0-100%).
         """
-        data = self._read_bms_data(self.PID_BMS_MAIN)
+        data = await self._read_bms_data(self.PID_BMS_MAIN)
         # SOC BMS is at byte position 4 (e in CSV notation), formula: e/2
         if len(data) < 5:
             raise ValueError("Invalid BMS response: insufficient data")
         soc_raw = data[4]
         return soc_raw / 2.0
     
-    def get_cell_voltage(self, cell: int) -> float:
+    async def get_cell_voltage(self, cell: int) -> float:
         """
         Get voltage of a specific battery cell.
         
@@ -97,19 +97,19 @@ class KiaNiroEV:
         # Determine which PID contains this cell's data
         if cell <= 32:
             # Cells 1-32 are in PID 0x0102
-            data = self._read_bms_data(self.PID_CELL_VOLTAGES_1)
+            data = await self._read_bms_data(self.PID_CELL_VOLTAGES_1)
             byte_index = cell + 3  # Cells start at byte 4 (e), cell 1 at index 4
         elif cell <= 64:
             # Cells 33-64 are in PID 0x0103
-            data = self._read_bms_data(self.PID_CELL_VOLTAGES_2)
+            data = await self._read_bms_data(self.PID_CELL_VOLTAGES_2)
             byte_index = (cell - 32) + 3
         elif cell <= 96:
             # Cells 65-96 are in PID 0x0104
-            data = self._read_bms_data(self.PID_CELL_VOLTAGES_3)
+            data = await self._read_bms_data(self.PID_CELL_VOLTAGES_3)
             byte_index = (cell - 64) + 3
         else:
             # Cells 97-98 are in PID 0x0105
-            data = self._read_bms_data(self.PID_CELL_VOLTAGES_4)
+            data = await self._read_bms_data(self.PID_CELL_VOLTAGES_4)
             # Cell 97 is at ai (byte 34), Cell 98 is at aj (byte 35)
             byte_index = (cell - 97) + 34
         
@@ -120,28 +120,28 @@ class KiaNiroEV:
         voltage_raw = data[byte_index]
         return voltage_raw / 50.0
     
-    def get_battery_voltage(self) -> float:
+    async def get_battery_voltage(self) -> float:
         """
         Get main battery DC voltage.
         
         Returns:
             float: Battery voltage in volts.
         """
-        data = self._read_bms_data(self.PID_BMS_MAIN)
+        data = await self._read_bms_data(self.PID_BMS_MAIN)
         # Battery DC Voltage: ((m<<8)+n)/10, bytes at positions 12 and 13
         if len(data) < 14:
             raise ValueError("Invalid BMS response: insufficient data")
         voltage_raw = (data[12] << 8) | data[13]
         return voltage_raw / 10.0
     
-    def get_battery_current(self) -> float:
+    async def get_battery_current(self) -> float:
         """
         Get battery current.
         
         Returns:
             float: Battery current in amperes (negative = charging, positive = discharging).
         """
-        data = self._read_bms_data(self.PID_BMS_MAIN)
+        data = await self._read_bms_data(self.PID_BMS_MAIN)
         # Battery Current: ((Signed(K)*256)+L)/10, bytes at positions 10 and 11
         if len(data) < 12:
             raise ValueError("Invalid BMS response: insufficient data")
@@ -154,14 +154,14 @@ class KiaNiroEV:
         current_raw = (current_high * 256) + data[11]
         return current_raw / 10.0
     
-    def get_max_cell_voltage(self) -> tuple[float, int]:
+    async def get_max_cell_voltage(self) -> tuple[float, int]:
         """
         Get maximum cell voltage and cell number.
         
         Returns:
             tuple[float, int]: (voltage in volts, cell number).
         """
-        data = self._read_bms_data(self.PID_BMS_MAIN)
+        data = await self._read_bms_data(self.PID_BMS_MAIN)
         if len(data) < 26:
             raise ValueError("Invalid BMS response: insufficient data")
         
@@ -171,14 +171,14 @@ class KiaNiroEV:
         cell_no = data[24]
         return (voltage, cell_no)
     
-    def get_min_cell_voltage(self) -> tuple[float, int]:
+    async def get_min_cell_voltage(self) -> tuple[float, int]:
         """
         Get minimum cell voltage and cell number.
         
         Returns:
             tuple[float, int]: (voltage in volts, cell number).
         """
-        data = self._read_bms_data(self.PID_BMS_MAIN)
+        data = await self._read_bms_data(self.PID_BMS_MAIN)
         if len(data) < 27:
             raise ValueError("Invalid BMS response: insufficient data")
         
@@ -188,14 +188,14 @@ class KiaNiroEV:
         cell_no = data[26]
         return (voltage, cell_no)
     
-    def get_soh(self) -> float:
+    async def get_soh(self) -> float:
         """
         Get State of Health from BMS.
         
         Returns:
             float: State of Health in percent (0-100%).
         """
-        data = self._read_bms_data(self.PID_CELL_VOLTAGES_4)
+        data = await self._read_bms_data(self.PID_CELL_VOLTAGES_4)
         if len(data) < 28:
             raise ValueError("Invalid BMS response: insufficient data")
         
@@ -203,7 +203,7 @@ class KiaNiroEV:
         soh_raw = (data[25] << 8) | data[26]
         return soh_raw / 10.0
     
-    def get_battery_temperatures(self) -> dict[str, float]:
+    async def get_battery_temperatures(self) -> dict[str, float]:
         """
         Get battery temperature readings.
         
@@ -214,7 +214,7 @@ class KiaNiroEV:
                 - 'inlet': Battery inlet temperature
                 - 'module_01' through 'module_04': Individual module temperatures
         """
-        data = self._read_bms_data(self.PID_BMS_MAIN)
+        data = await self._read_bms_data(self.PID_BMS_MAIN)
         if len(data) < 21:
             raise ValueError("Invalid BMS response: insufficient data")
         
