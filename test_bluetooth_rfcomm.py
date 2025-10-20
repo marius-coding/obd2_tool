@@ -9,6 +9,7 @@ Serial Port Profile (RFCOMM) which is standard for OBD2 devices.
 import subprocess
 import sys
 import time
+import pytest
 
 
 # Known OBD2 adapter addresses

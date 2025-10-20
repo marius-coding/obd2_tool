@@ -8,8 +8,10 @@ to the Vgate adapter to verify the Bluetooth connection works.
 
 import asyncio
 import sys
+import pytest
 
 from bleak import BleakClient, BleakScanner
+
 
 
 async def discover_devices() -> str | None:
@@ -55,7 +57,7 @@ async def discover_devices() -> str | None:
         return None
 
 
-async def test_connection(address: str) -> bool:
+async def verify_connection(address: str) -> bool:
     """Test connection to the Vgate adapter."""
     print("\n📡 Attempting to connect to Vgate adapter...")
     print("-" * 80)
@@ -101,7 +103,7 @@ async def main() -> None:
         sys.exit(1)
 
     # Step 2: Test connection
-    success = await test_connection(vgate_address)
+    success = await verify_connection(vgate_address)
 
     print("\n" + "=" * 80)
     if success:

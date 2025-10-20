@@ -18,7 +18,7 @@ class Connection(ABC):
         self._needs_delays: bool = True  # Override to False for mock/fast connections
 
     @abstractmethod
-    async def open(self) -> None:
+    def open(self) -> None:
         """
         Open the connection.
 
@@ -28,7 +28,7 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    async def close(self) -> None:
+    def close(self) -> None:
         """
         Close the connection.
 
@@ -38,7 +38,7 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    async def write(self, data: bytes) -> None:
+    def write(self, data: bytes) -> None:
         """
         Write data to the connection.
 
@@ -51,7 +51,7 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    async def read(self, size: int = 1) -> bytes:
+    def read(self, size: int = 1) -> bytes:
         """
         Read data from the connection.
 
@@ -67,7 +67,7 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    async def read_until(self, terminator: bytes, timeout: Optional[float] = None) -> bytes:
+    def read_until(self, terminator: bytes, timeout: Optional[float] = None) -> bytes:
         """
         Read data until a terminator is found.
 
@@ -85,7 +85,7 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    async def flush_input(self) -> None:
+    def flush_input(self) -> None:
         """
         Flush input buffer.
 
@@ -95,7 +95,7 @@ class Connection(ABC):
         pass
 
     @abstractmethod
-    async def flush_output(self) -> None:
+    def flush_output(self) -> None:
         """
         Flush output buffer.
 
@@ -116,20 +116,17 @@ class Connection(ABC):
 
     def __enter__(self) -> "Connection":
         """Context manager entry."""
-        raise RuntimeError("Use 'async with' instead")
+        # Synchronous context manager: open the connection on enter
+        self.open()
+        return self
 
     def __exit__(self, *args: object) -> None:
         """Context manager exit."""
-        pass
+        try:
+            self.close()
+        except Exception:
+            pass
 
-    async def __aenter__(self) -> "Connection":
-        """Async context manager entry."""
-        await self.open()
-        return self
-
-    async def __aexit__(self, *args: object) -> None:
-        """Async context manager exit."""
-        await self.close()
 
 
 class ConnectionException(Exception):

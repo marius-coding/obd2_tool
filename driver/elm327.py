@@ -4,7 +4,6 @@ ELM327 driver module for OBD-II communication.
 This module provides an interface to communicate with ELM327-based OBD-II adapters.
 """
 
-import asyncio
 import threading
 import time
 from typing import Optional
@@ -59,7 +58,7 @@ class ELM327:
         self._tester_present_interval: float = 2.0
         self._initialized: bool = False
 
-    async def initialize(self) -> None:
+    def initialize(self) -> None:
         """
         Initialize the ELM327 device with optimal settings.
 
@@ -71,22 +70,22 @@ class ELM327:
         """
         try:
             # Reset and wait for initialization
-            await self._send_command('ATZ')
+            self._send_command('ATZ')
             if self.connection.needs_delays:
-                await asyncio.sleep(1.0)
+                time.sleep(1.0)
             
             # Configure ELM327
-            await self._send_command('ATE0')  # Echo off
-            await self._send_command('ATL0')  # Linefeeds off
-            await self._send_command('ATS0')  # Spaces off
-            await self._send_command('ATH1')  # Headers on
-            await self._send_command('ATSP0')  # Auto protocol detection
+            self._send_command('ATE0')  # Echo off
+            self._send_command('ATL0')  # Linefeeds off
+            self._send_command('ATS0')  # Spaces off
+            self._send_command('ATH1')  # Headers on
+            self._send_command('ATSP0')  # Auto protocol detection
             
             self._initialized = True
         except ConnectionException as e:
             raise ELM327ConnectionException(f"Failed to initialize ELM327: {e}")
 
-    async def _send_command(self, command: str) -> str:
+    def _send_command(self, command: str) -> str:
         """
         Send a command to the ELM327 device and read response.
 
@@ -102,19 +101,19 @@ class ELM327:
         """
         try:
             # Send command with carriage return
-            await self.connection.write((command + '\r').encode('ascii'))
+            self.connection.write((command + '\r').encode('ascii'))
             
             # Brief pause for ELM327 to process (skip for mock/fast connections)
             if self.connection.needs_delays:
-                await asyncio.sleep(0.1)
+                time.sleep(0.1)
             
             # Read response
-            response = await self.connection.read(1024)
+            response = self.connection.read(1024)
             return response.decode('ascii', errors='ignore').strip()
         except ConnectionException as e:
             raise NotConnectedException(f"Connection communication failed: {e}")
 
-    async def send_message(self, can_id: int | None, pid: int) -> IsoTpResponse:
+    def send_message(self, can_id: int | None, pid: int) -> IsoTpResponse:
         """
         Send an OBD-II or UDS message and receive the response.
 
@@ -140,14 +139,14 @@ class ELM327:
         if can_id is not None:
             # UDS message with specific CAN ID
             header = f"ATSH{can_id:03X}"
-            await self._send_command(header)
+            self._send_command(header)
             message = f"{pid:02X}"
         else:
             # Standard OBD-II request (Mode 01)
             message = f"01{pid:02X}"
 
         # Send message
-        response_str = await self._send_command(message)
+        response_str = self._send_command(message)
         
         # Check for various ELM327 status/error messages that aren't actual data
         error_keywords = [
@@ -275,7 +274,10 @@ class ELM327:
         while self.tester_present_running:
             try:
                 # Send Tester Present (0x3E 0x00) - suppress positive response
-                asyncio.run(self._send_command('3E00'))
+                try:
+                    self._send_command('3E00')
+                except Exception:
+                    pass
             except Exception:
                 pass  # Ignore errors in background thread
             time.sleep(self._tester_present_interval)
@@ -291,12 +293,12 @@ class ELM327:
             self.tester_present_thread.join(timeout=self._tester_present_interval + 1.0)
             self.tester_present_thread = None
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """
         Close the connection and stop all background tasks.
 
         Should be called when the driver is no longer needed to free resources.
         """
         self.disable_tester_present()
-        await self.connection.close()
+        self.connection.close()
         self._initialized = False

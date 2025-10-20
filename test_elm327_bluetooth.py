@@ -5,9 +5,15 @@ Test ELM327 communication over Bluetooth RFCOMM connection.
 
 import serial
 import time
+import pytest
+import os
 
 def test_elm327_bluetooth(port='/dev/rfcomm0', baudrate=115200):
     """Test ELM327 commands over Bluetooth."""
+    # Skip test if the device doesn't exist (no hardware connected)
+    if not os.path.exists(port):
+        pytest.skip(f"Device {port} not found - skipping hardware test")
+    
     print(f"\n{'='*80}")
     print("🧪 Testing ELM327 Communication over Bluetooth")
     print(f"{'='*80}\n")
@@ -24,7 +30,7 @@ def test_elm327_bluetooth(port='/dev/rfcomm0', baudrate=115200):
         
         if not ser.is_open:
             print(f"❌ Failed to open {port}")
-            return False
+            assert False, f"Failed to open {port}"
             
         print(f"✅ Port opened successfully\n")
         
@@ -83,16 +89,15 @@ def test_elm327_bluetooth(port='/dev/rfcomm0', baudrate=115200):
         print(f"{'='*80}")
         print("✅ Test completed successfully!")
         print(f"{'='*80}\n")
-        return True
         
     except serial.SerialException as e:
         print(f"\n❌ Serial error: {e}")
-        return False
+        assert False, f"Serial error: {e}"
     except Exception as e:
         print(f"\n❌ Unexpected error: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        assert False, f"Unexpected error: {e}"
 
 if __name__ == "__main__":
     import sys
@@ -104,5 +109,9 @@ if __name__ == "__main__":
     print("  sudo rfcomm connect /dev/rfcomm0 00:1D:A5:1E:32:25 1 &")
     print("="*80)
     
-    success = test_elm327_bluetooth(port)
-    sys.exit(0 if success else 1)
+    try:
+        test_elm327_bluetooth(port)
+        sys.exit(0)
+    except (AssertionError, Exception):
+        sys.exit(1)
+

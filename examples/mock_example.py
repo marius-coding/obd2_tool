@@ -5,25 +5,24 @@ This example demonstrates how to use the MockConnection for testing
 without requiring actual hardware.
 """
 
-import asyncio
 from driver import ELM327, MockConnection
 
 
-async def main():
+def main():
     """Main example function."""
     # Create Mock connection
     connection = MockConnection()
     
     try:
-        # Open the connection using async context manager
-        async with connection:
+        # Open the connection using context manager
+        with connection:
             print("Connected to mock ELM327 adapter")
-            
+
             # Create ELM327 driver with the connection
             elm = ELM327(connection)
-            
+
             # Initialize ELM327
-            await elm.initialize()
+            elm.initialize()
             print("ELM327 initialized successfully")
             
             # Example 1: UDS request to read battery data (predefined mock response)
@@ -33,7 +32,7 @@ async def main():
                 can_id = 0x7E4
                 
                 # This mock has a predefined response for this request
-                response = await elm.send_message(can_id, 0x220101)
+                response = elm.send_message(can_id, 0x220101)
                 if response.data:
                     print(f"Received {len(response.data)} bytes of data")
                     print(f"Service ID: 0x{response.service_id:02X}")
@@ -54,7 +53,7 @@ async def main():
             # Example 2: Another UDS request (battery cell voltages)
             print("\n=== Reading Battery Cell Data (Service 0x22, DID 0x0105) ===")
             try:
-                response = await elm.send_message(0x7E4, 0x220105)
+                response = elm.send_message(0x7E4, 0x220105)
                 if response.data:
                     print(f"Received {len(response.data)} bytes of cell data")
                     print(f"Service ID: 0x{response.service_id:02X}")
@@ -64,7 +63,7 @@ async def main():
                 print(f"Error: {e}")
             
             # Close the ELM327 driver
-            await elm.close()
+            elm.close()
             print("\n=== Connection closed ===")
             
     except Exception as e:
@@ -72,4 +71,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

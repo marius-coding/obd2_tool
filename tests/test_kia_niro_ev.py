@@ -2,7 +2,6 @@
 Test module for Kia Niro EV diagnostics.
 """
 
-import asyncio
 import unittest
 from driver.kia_niro_ev import KiaNiroEV
 from driver.elm327 import ELM327
@@ -16,11 +15,11 @@ class TestKiaNiroEV(unittest.TestCase):
         """Set up test fixtures."""
         # Create mock connection
         self.mock_connection = MockConnection()
-        asyncio.run(self.mock_connection.open())
+        self.mock_connection.open()
         
         # Create ELM327 instance with mock connection
         self.elm = ELM327(self.mock_connection)
-        asyncio.run(self.elm.initialize())
+        self.elm.initialize()
         
         # Create Kia Niro EV instance
         self.kia = KiaNiroEV(self.elm)
@@ -39,16 +38,16 @@ class TestKiaNiroEV(unittest.TestCase):
         # SOC is at byte 4 of payload (after 62 01 01): 0x69 = 105, 105/2 = 52.5%
         
         # Get SOC
-        soc = asyncio.run(self.kia.get_soc())
-        
+        soc = self.kia.get_soc()
+
         # SOC should be 52.5%
         self.assertAlmostEqual(soc, 52.5, places=1)
     
     def test_get_battery_voltage(self):
         """Test battery voltage reading."""
         # Get battery voltage (using same trace data as test_get_soc)
-        voltage = asyncio.run(self.kia.get_battery_voltage())
-        
+        voltage = self.kia.get_battery_voltage()
+
         # Battery voltage is at bytes 12-13 of payload (after service + data ID)
         # From trace: bytes 12=0x0E, 13=0x26
         # ((0x0E << 8) + 0x26) / 10 = (3584 + 38) / 10 = 362.2V
@@ -57,8 +56,8 @@ class TestKiaNiroEV(unittest.TestCase):
     def test_get_max_cell_voltage(self):
         """Test maximum cell voltage reading."""
         # Get max cell voltage
-        voltage, cell_no = asyncio.run(self.kia.get_max_cell_voltage())
-        
+        voltage, cell_no = self.kia.get_max_cell_voltage()
+
         # From trace: byte 23=0xDE (222), byte 24=0x80 (128)
         # Voltage: 222/50 = 4.44V
         # Cell: 128 (but this seems high, might be 0x00 in actual working system)
@@ -68,8 +67,8 @@ class TestKiaNiroEV(unittest.TestCase):
     
     def test_get_battery_temperatures(self):
         """Test battery temperature readings."""
-        temps = asyncio.run(self.kia.get_battery_temperatures())
-        
+        temps = self.kia.get_battery_temperatures()
+
         # Verify all expected keys are present
         expected_keys = ['max', 'min', 'module_01', 'module_02', 'module_03', 'module_04', 'inlet']
         for key in expected_keys:

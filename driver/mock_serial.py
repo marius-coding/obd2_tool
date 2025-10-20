@@ -48,13 +48,13 @@ class MockConnection(Connection):
             '220105': '7EC 10 2E 62 01 05 FF FF 0B 74 \r7EC 21 0F 01 2C 01 01 2C 0B \r7EC 22 0B 0C 0B 0C 0C 0C 3E \r7EC 23 90 43 82 00 00 64 0E \r7EC 24 00 03 E8 21 39 A0 00 \r7EC 25 67 00 00 00 00 00 00 \r7EC 26 00 0C 0C 0D 0D AA AA \r\r>',
         }
 
-    async def open(self) -> None:
+    def open(self) -> None:
         """
         Open the mock connection.
         """
         self._is_open = True
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """
         Close the mock connection.
         """
@@ -62,7 +62,7 @@ class MockConnection(Connection):
         self.response_queue.clear()
         self._read_buffer = b''
 
-    async def write(self, data: bytes) -> None:
+    def write(self, data: bytes) -> None:
         """
         Mock write operation.
 
@@ -85,7 +85,7 @@ class MockConnection(Connection):
         # Add response to read buffer
         self._read_buffer += response.encode('ascii')
 
-    async def read(self, size: int = 1) -> bytes:
+    def read(self, size: int = 1) -> bytes:
         """
         Mock read operation.
 
@@ -105,7 +105,7 @@ class MockConnection(Connection):
         
         return result
 
-    async def read_until(self, terminator: bytes, timeout: Optional[float] = None) -> bytes:
+    def read_until(self, terminator: bytes, timeout: Optional[float] = None) -> bytes:
         """
         Read data until a terminator is found.
 
@@ -129,13 +129,13 @@ class MockConnection(Connection):
         self._read_buffer = b''
         return result
 
-    async def flush_input(self) -> None:
+    def flush_input(self) -> None:
         """
         Flush input buffer.
         """
         self._read_buffer = b''
 
-    async def flush_output(self) -> None:
+    def flush_output(self) -> None:
         """
         Flush output buffer (no-op for mock).
         """

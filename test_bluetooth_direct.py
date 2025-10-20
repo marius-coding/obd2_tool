@@ -5,8 +5,12 @@ Direct Bluetooth connection test to known paired OBD adapters.
 
 import asyncio
 import sys
+import pytest
 
 from bleak import BleakClient
+
+# Skip interactive Bluetooth direct tests during automated pytest runs
+pytest.skip("Skipping interactive Bluetooth direct script in automated test runs", allow_module_level=True)
 
 
 # Known OBD adapter addresses from bluetoothctl

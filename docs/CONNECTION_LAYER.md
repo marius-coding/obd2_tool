@@ -41,13 +41,13 @@ Defines the abstract interface that all connection implementations must follow:
 
 ```python
 class Connection(ABC):
-    async def open() -> None
-    async def close() -> None
-    async def write(data: bytes) -> None
-    async def read(size: int) -> bytes
-    async def read_until(terminator: bytes, timeout: Optional[float]) -> bytes
-    async def flush_input() -> None
-    async def flush_output() -> None
+    def open() -> None
+    def close() -> None
+    def write(data: bytes) -> None
+    def read(size: int) -> bytes
+    def read_until(terminator: bytes, timeout: Optional[float]) -> bytes
+    def flush_input() -> None
+    def flush_output() -> None
 ```
 
 **Exceptions:**
@@ -72,10 +72,10 @@ Implements serial port communication (USB/Serial adapters).
 from driver import ELM327, SerialConnection
 
 connection = SerialConnection('/dev/ttyUSB0', baudrate=38400)
-async with connection:
+with connection:
     elm = ELM327(connection)
-    await elm.initialize()
-    response = await elm.send_message(None, 0x0D)
+    elm.initialize()
+    response = elm.send_message(None, 0x0D)
 ```
 
 ### 3. BluetoothConnection
@@ -87,7 +87,7 @@ Implements Bluetooth Classic communication using RFCOMM.
 **Features:**
 - RFCOMM binding to `/dev/rfcomm<N>` devices
 - Automatic pairing check via `bluetoothctl`
-- Static async method `discover_devices()` for Bluetooth scanning
+- Static method `discover_devices()` for Bluetooth scanning
 - Supports custom RFCOMM channel and baudrate
 - Automatic cleanup of RFCOMM bindings
 
@@ -171,27 +171,25 @@ asyncio.run(main())
 import asyncio
 from driver import ELM327, BluetoothConnection
 
-async def main():
+def main():
     connection = BluetoothConnection(
         address="00:1D:A5:1E:32:25",
         rfcomm_device=0,
         channel=1,
         baudrate=115200
     )
-    
-    async with connection:
+
+    with connection:
         elm = ELM327(connection)
-        await elm.initialize()
-        
+        elm.initialize()
+
         # Read engine RPM
-        response = await elm.send_message(None, 0x0C)
+        response = elm.send_message(None, 0x0C)
         if response.data and len(response.data) >= 2:
             rpm = ((response.data[0] * 256) + response.data[1]) / 4
             print(f"RPM: {rpm}")
-        
-        await elm.close()
 
-asyncio.run(main())
+        elm.close()
 ```
 
 ## Benefits
