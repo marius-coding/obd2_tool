@@ -1,0 +1,14 @@
+# Core dependencies for OBD2 tool
+
+# BLE (Bluetooth Low Energy) support for wireless OBD2 adapters
+bleak>=0.21.0
+
+# Serial port communication for wired OBD2 adapters
+pyserial>=3.5
+
+# Testing dependencies
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+
+# Type checking and code quality (optional, for development)
+mypy>=1.5.0
