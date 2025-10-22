@@ -107,8 +107,28 @@ class ELM327:
             if self.connection.needs_delays:
                 time.sleep(0.1)
             
-            # Read response
-            response = self.connection.read(1024)
+            # Read response until ELM327 prompt
+            # Use read_until if available (better for BLE), otherwise read fixed size
+            if hasattr(self.connection, 'read_until'):
+                # For BLE connections, wait a bit after getting '>' to capture trailing frames
+                if hasattr(self.connection, '_read_buffer'):
+                    # Initial read with standard timeout
+                    response = self.connection.read_until(b'>', timeout=15.0)
+                    # If response looks like multi-frame data (has line breaks), wait for more
+                    if b'\r' in response or b'\n' in response:
+                        time.sleep(1)  # Wait for trailing frames
+                        # Try reading more with shorter timeout
+                        try:
+                            extra = self.connection.read_until(b'>', timeout=2.0)
+                            if len(extra) > 2:  # More than just prompt
+                                response += extra
+                        except:
+                            pass  # Timeout is OK, means no more data
+                else:
+                    response = self.connection.read_until(b'>', timeout=15.0)
+            else:
+                response = self.connection.read(1024)
+            
             return response.decode('ascii', errors='ignore').strip()
         except ConnectionException as e:
             raise NotConnectedException(f"Connection communication failed: {e}")
@@ -147,6 +167,11 @@ class ELM327:
 
         # Send message
         response_str = self._send_command(message)
+        
+        # Debug: log raw response for troubleshooting
+        if hasattr(self.connection, '_read_buffer'):
+            # Only log for BLE connections when debugging
+            pass  # Could add logging here if needed
         
         # Check for various ELM327 status/error messages that aren't actual data
         error_keywords = [

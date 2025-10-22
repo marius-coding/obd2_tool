@@ -35,10 +35,101 @@ class KiaNiroEV:
         self.elm = elm
         self.bms_can_id = self.BMS_REQUEST_ID
 
+        # Enable cyclic Tester Present to keep ECU awake during diagnostics
+        # TEMPORARILY DISABLED for debugging
+        # try:
+        #     # Default 2s interval (ELM327 will send 0x3E 0x00)
+        #     self.elm.enable_cyclic_tester_present(2.0)
+        # except Exception:
+        #     # Non-fatal: some tests or mock connections may not implement this
+        #     pass
+
+        # Retry configuration (can be tuned if needed)
+        self._read_retries = 5  # Increased from 3 to 5
+        self._read_backoff = 0.25  # seconds between retries
+        self._debug = False  # Set to True for verbose logging
+
+        # Longer startup delay to ensure ECU is awake and protocol is established
+        try:
+            import time as _time
+            _time.sleep(3.0)  # 3 seconds for ECU wake-up and protocol detection
+        except Exception:
+            pass
+
+        # Send a warmup request to establish the connection and wake the ECU
+        try:
+            if self._debug:
+                print("[DEBUG] Sending warmup request to establish ECU connection...")
+            # Try to read SOC - this will establish the protocol
+            warmup_response = self.elm.send_message(self.bms_can_id, (self.READ_DATA_BY_ID << 16) | self.PID_BMS_MAIN)
+            if self._debug:
+                print(f"[DEBUG] Warmup successful, ECU responding (payload: {len(warmup_response.payload)} bytes)")
+            import time as _time
+            _time.sleep(0.5)  # Brief pause after warmup
+        except Exception as e:
+            if self._debug:
+                print(f"[DEBUG] Warmup failed: {e} (will retry on first real request)")
+            pass
+
     def _read_bms_data(self, pid: int) -> bytearray:
+        import time
+
         uds_command = (self.READ_DATA_BY_ID << 16) | pid
-        response = self.elm.send_message(self.bms_can_id, uds_command)
-        return response.payload
+        
+        if self._debug:
+            print(f"[DEBUG] Reading BMS PID 0x{pid:04X}, UDS command: 0x{uds_command:06X}")
+
+        last_exc = None
+        for attempt in range(1, self._read_retries + 1):
+            try:
+                if self._debug:
+                    print(f"[DEBUG] Attempt {attempt}/{self._read_retries}")
+                
+                # Only flush on retry attempts (not first attempt)
+                if attempt > 1:
+                    try:
+                        self.elm.connection.flush_input()
+                        if self._debug:
+                            print(f"[DEBUG] Flushed input buffer before retry")
+                        # Small delay after flush for BLE to stabilize
+                        if hasattr(self.elm.connection, '_read_buffer'):
+                            time.sleep(0.15)
+                    except Exception:
+                        pass
+                
+                response = self.elm.send_message(self.bms_can_id, uds_command)
+                
+                if self._debug:
+                    print(f"[DEBUG] Received payload length: {len(response.payload)} bytes")
+                    print(f"[DEBUG] Payload: {response.payload.hex()}")
+                    if len(response.payload) < 10:
+                        print(f"[DEBUG] WARNING: Unusually short payload - possible communication issue")
+                
+                return response.payload
+            except Exception as e:
+                last_exc = e
+                if self._debug:
+                    print(f"[DEBUG] Attempt {attempt} failed: {type(e).__name__}: {e}")
+                
+                # If this was the last attempt, re-raise
+                if attempt == self._read_retries:
+                    if self._debug:
+                        print(f"[DEBUG] All {self._read_retries} attempts exhausted, raising exception")
+                    raise
+                
+                # Backoff before retrying
+                backoff_time = self._read_backoff * attempt
+                if self._debug:
+                    print(f"[DEBUG] Waiting {backoff_time}s before retry...")
+                try:
+                    time.sleep(backoff_time)
+                except Exception:
+                    pass
+
+        # If somehow we exit loop without returning, raise last exception
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("Unknown error reading BMS data")
 
     def get_soc(self) -> float:
         data = self._read_bms_data(self.PID_BMS_MAIN)

@@ -17,6 +17,7 @@ from .isotp import IsoTpFrame, IsoTpMessage, IsoTpResponse, parse_isotp_frames, 
 from .connection import Connection, ConnectionException, ConnectionTimeoutError, ConnectionError
 from .serial_connection import SerialConnection
 from .bluetooth_connection import BluetoothConnection
+from .ble_connection import BLEConnection
 from .mock_serial import MockConnection
 
 # Note: Avoid importing ConnectionException from .exceptions to prevent name collision
@@ -31,6 +32,7 @@ __all__ = [
     'Connection',
     'SerialConnection',
     'BluetoothConnection',
+    'BLEConnection',
     'MockConnection',
     
     # Connection Exceptions
