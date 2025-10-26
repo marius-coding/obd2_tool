@@ -194,3 +194,4 @@ $RECYCLE.BIN/
 *.swp
 *.swo
 *~
+mqtt_soc_config_test.ini
