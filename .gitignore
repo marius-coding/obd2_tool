@@ -195,3 +195,7 @@ $RECYCLE.BIN/
 *.swo
 *~
 mqtt_soc_config_test.ini
+SERVICE_INSTALL_SUMMARY.txt
+.gitignore
+service-control.sh
+SYSTEMD_SERVICE.md
